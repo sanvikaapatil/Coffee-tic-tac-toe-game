@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Coffee Tic-Tac-Toe</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --ink: #3a2a1a;
+        --accent: #c8965a;
+        --glow: rgba(200, 150, 80, 0.18);
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: Georgia, "Times New Roman", serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .app {
+        width: min(92vw, 860px);
+        padding: 28px 12px 42px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 18px;
+      }
+
+      .stage {
+        position: relative;
+        width: min(92vw, 640px);
+        display: flex;
+        justify-content: center;
+      }
+
+      .coasterWrap {
+        position: relative;
+        width: min(92vw, 480px);
+      }
+
+      .coasterImg {
+        width: 100%;
+        height: auto;
+        display: block;
+        filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.28));
+      }
+
+      .boardOverlay {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      .dropzone {
+        position: absolute;
+        left: var(--x);
+        top: var(--y);
+        width: 26%;
+        height: 26%;
+        transform: translate(-50%, -50%);
+        border-radius: 50%;
+        pointer-events: auto;
+        background: transparent;
+      }
+
+      .dropzone:not(.locked):hover {
+        box-shadow: 0 0 18px 6px var(--glow);
+      }
+
+      .dropzone.locked {
+        pointer-events: none;
+      }
+
+      .poolPiece,
+      .placedPiece,
+      .computerMover {
+        width: 80px;
+        height: 80px;
+        user-select: none;
+        -webkit-user-drag: none;
+      }
+
+      .poolPiece {
+        position: absolute;
+        cursor: grab;
+        transform: rotate(var(--rot));
+        will-change: transform, left, top;
+      }
+
+      .poolPiece.used {
+        display: none;
+      }
+
+      .poolPiece.heldSource {
+        opacity: 0.3;
+      }
+
+      .dragGhost {
+        position: fixed;
+        left: 0;
+        top: 0;
+        transform: translate(-50%, -50%) scale(1.15) rotate(var(--rot));
+        width: 80px;
+        height: 80px;
+        z-index: 1000;
+        pointer-events: none;
+        user-select: none;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+      }
+
+      .placedPiece {
+        position: absolute;
+        left: var(--x);
+        top: var(--y);
+        transform: translate(-50%, -50%) rotate(var(--rot));
+        pointer-events: none;
+      }
+
+      .computerMover {
+        position: absolute;
+        pointer-events: none;
+        will-change: left, top;
+        transform: rotate(var(--rot));
+        z-index: 40;
+      }
+
+      .winLine {
+        position: absolute;
+        height: 3px;
+        background: var(--accent);
+        border-radius: 2px;
+        opacity: 0.85;
+        transform-origin: 0 50%;
+        width: 0px;
+        pointer-events: none;
+      }
+
+      .resultCard {
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        margin-top: 10px;
+      }
+
+      .resultCard.show {
+        display: flex;
+      }
+
+      .resultText {
+        font-size: 18px;
+        color: var(--ink);
+        text-align: center;
+      }
+
+      .btn {
+        appearance: none;
+        border: none;
+        background: var(--accent);
+        color: #ffffff;
+        font-family: Georgia, "Times New Roman", serif;
+        font-size: 15px;
+        padding: 10px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+
+      .btn:active {
+        transform: translateY(1px);
+      }
+
+      .note {
+        text-align: center;
+        font-size: 16px;
+        color: var(--ink);
+        margin-top: 2px;
+        margin-bottom: 4px;
+        line-height: 1.25;
+      }
+
+      .note strong {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      @media (max-width: 520px) {
+        .poolPiece,
+        .placedPiece,
+        .dragGhost,
+        .computerMover {
+          width: 72px;
+          height: 72px;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="app">
+      <div class="note" id="note">
+        Drag a coffee bean / sugar cube to start the game. <strong>Let's go!</strong>
+      </div>
+      <div class="stage" id="stage">
+        <div class="coasterWrap" id="coasterWrap">
+          <img class="coasterImg" id="coasterImg" src="coaster.png" alt="Coffee coaster" />
+          <div class="boardOverlay" id="boardOverlay"></div>
+        </div>
+      </div>
+
+      <div class="resultCard" id="resultCard">
+        <div class="resultText" id="resultText"></div>
+        <button class="btn" id="playAgainBtn" type="button">Play Again</button>
+      </div>
+    </div>
+
+    <script>
+      const WIN_COMBOS = [
+        [0, 1, 2],
+        [3, 4, 5],
+        [6, 7, 8],
+        [0, 3, 6],
+        [1, 4, 7],
+        [2, 5, 8],
+        [0, 4, 8],
+        [2, 4, 6],
+      ];
+
+      // Straight grid (updated coaster) - centers align to black dots in your reference overlay.
+      const CELL_PCTS = [
+        { x: 33, y: 31 },
+        { x: 50, y: 27 },
+        { x: 67, y: 31 },
+        { x: 28, y: 50 },
+        { x: 50, y: 50 },
+        { x: 72, y: 50 },
+        { x: 33, y: 69 },
+        { x: 50, y: 73 },
+        { x: 67, y: 69 },
+      ];
+
+      const stage = document.getElementById("stage");
+      const coasterWrap = document.getElementById("coasterWrap");
+      const coasterImg = document.getElementById("coasterImg");
+      const boardOverlay = document.getElementById("boardOverlay");
+      const note = document.getElementById("note");
+      const resultCard = document.getElementById("resultCard");
+      const resultText = document.getElementById("resultText");
+      const playAgainBtn = document.getElementById("playAgainBtn");
+
+      let player = null; // "bean" | "cube"
+      let computer = null; // "bean" | "cube"
+      let board = Array(9).fill(null);
+      let gameOver = false;
+      let computerThinking = false;
+      let gameStarted = false;
+
+      let poolEls = [];
+      let placedEls = [];
+      let winLineEl = null;
+      let dragState = null;
+
+      function checkWinner(b) {
+        for (const [a, c, d] of WIN_COMBOS) {
+          if (b[a] && b[a] === b[c] && b[a] === b[d]) return b[a];
+        }
+        return null;
+      }
+
+      function getWinningCombo(b) {
+        for (const combo of WIN_COMBOS) {
+          const [a, c, d] = combo;
+          if (b[a] && b[a] === b[c] && b[a] === b[d]) return combo;
+        }
+        return null;
+      }
+
+      function minimax(b, depth, isMaximizing) {
+        const winner = checkWinner(b);
+        if (winner === computer) return 10 - depth;
+        if (winner === player) return depth - 10;
+        if (b.every((c) => c !== null)) return 0;
+
+        if (isMaximizing) {
+          let best = -Infinity;
+          for (let i = 0; i < 9; i++) {
+            if (!b[i]) {
+              b[i] = computer;
+              best = Math.max(best, minimax(b, depth + 1, false));
+              b[i] = null;
+            }
+          }
+          return best;
+        }
+        let best = Infinity;
+        for (let i = 0; i < 9; i++) {
+          if (!b[i]) {
+            b[i] = player;
+            best = Math.min(best, minimax(b, depth + 1, true));
+            b[i] = null;
+          }
+        }
+        return best;
+      }
+
+      function bestMove() {
+        let bestScore = -Infinity;
+        let move = -1;
+        for (let i = 0; i < 9; i++) {
+          if (!board[i]) {
+            board[i] = computer;
+            const score = minimax(board, 0, false);
+            board[i] = null;
+            if (score > bestScore) {
+              bestScore = score;
+              move = i;
+            }
+          }
+        }
+        return move;
+      }
+
+      function pieceSrc(kind, variantIndex) {
+        if (kind === "bean") return variantIndex % 2 === 0 ? "bean1.png" : "bean2.png";
+        return variantIndex % 2 === 0 ? "cube1.png" : "cube2.png";
+      }
+
+      function scatterLayout() {
+        const beans = [
+          // Lower semi-circle cluster (below cup)
+          { top: 245, left: -78, rot: -12 },
+          { top: 285, right: -92, rot: 9 },
+          { top: 330, left: -28, rot: -6 },
+          { top: 365, right: -18, rot: 10 },
+          { top: 320, right: -52, rot: -9 },
+        ];
+        const cubes = [
+          { top: 260, right: -56, rot: 14 },
+          { top: 300, left: -92, rot: -11 },
+          { top: 350, right: -110, rot: 6 },
+          { top: 385, left: 22, rot: -8 },
+          { top: 340, left: -6, rot: 9 },
+        ];
+        return { beans, cubes };
+      }
+
+      function ensureDropzones() {
+        boardOverlay.innerHTML = "";
+        for (let i = 0; i < 9; i++) {
+          const dz = document.createElement("div");
+          dz.className = "dropzone";
+          dz.dataset.cell = String(i);
+          dz.style.setProperty("--x", `${CELL_PCTS[i].x}%`);
+          dz.style.setProperty("--y", `${CELL_PCTS[i].y}%`);
+          boardOverlay.appendChild(dz);
+        }
+      }
+
+      function updateDropzoneLocks() {
+        const zones = boardOverlay.querySelectorAll(".dropzone");
+        zones.forEach((z) => {
+          const idx = Number(z.dataset.cell);
+          z.classList.toggle("locked", Boolean(board[idx]));
+        });
+      }
+
+      function clearPoolPieces() {
+        poolEls.forEach((el) => el.remove());
+        poolEls = [];
+      }
+
+      function clearPlacedPieces() {
+        placedEls.forEach((el) => el.remove());
+        placedEls = [];
+      }
+
+      function clearAllPieces() {
+        clearPoolPieces();
+        clearPlacedPieces();
+      }
+
+      function removeWinLine() {
+        if (winLineEl) winLineEl.remove();
+        winLineEl = null;
+      }
+
+      function resetGameState() {
+        board = Array(9).fill(null);
+        gameOver = false;
+        computerThinking = false;
+        gameStarted = false;
+        player = null;
+        computer = null;
+        resultCard.classList.remove("show");
+        resultText.textContent = "";
+        removeWinLine();
+        clearAllPieces();
+        ensureDropzones();
+        updateDropzoneLocks();
+      }
+
+      function boardRect() {
+        return coasterWrap.getBoundingClientRect();
+      }
+
+      function cellCenterPx(cellIdx) {
+        const rect = boardRect();
+        return {
+          x: rect.width * (CELL_PCTS[cellIdx].x / 100),
+          y: rect.height * (CELL_PCTS[cellIdx].y / 100),
+          w: rect.width,
+          h: rect.height,
+        };
+      }
+
+      function findDropCellAt(clientX, clientY) {
+        const rect = boardRect();
+        const localX = clientX - rect.left;
+        const localY = clientY - rect.top;
+        const radius = rect.width * 0.13;
+        let best = null;
+        let bestDist = Infinity;
+        for (let i = 0; i < 9; i++) {
+          if (board[i]) continue;
+          const c = cellCenterPx(i);
+          const dx = localX - c.x;
+          const dy = localY - c.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist <= radius && dist < bestDist) {
+            best = i;
+            bestDist = dist;
+          }
+        }
+        return best;
+      }
+
+      function lockCell(cellIdx) {
+        const zone = boardOverlay.querySelector(`.dropzone[data-cell="${cellIdx}"]`);
+        if (zone) zone.classList.add("locked");
+      }
+
+      function drawWinLine(aIdx, bIdx) {
+        removeWinLine();
+        const a = cellCenterPx(aIdx);
+        const b = cellCenterPx(bIdx);
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len = Math.hypot(dx, dy);
+        const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
+
+        winLineEl = document.createElement("div");
+        winLineEl.className = "winLine";
+        winLineEl.style.left = `${a.x}px`;
+        winLineEl.style.top = `${a.y}px`;
+        winLineEl.style.transform = `rotate(${ang}deg)`;
+        winLineEl.style.width = "0px";
+        winLineEl.style.transition = "width 500ms ease";
+        boardOverlay.appendChild(winLineEl);
+
+        requestAnimationFrame(() => {
+          if (!winLineEl) return;
+          winLineEl.style.width = `${len}px`;
+        });
+      }
+
+      function endIfTerminal() {
+        const winner = checkWinner(board);
+        if (winner) {
+          gameOver = true;
+          const combo = getWinningCombo(board);
+          if (combo) drawWinLine(combo[0], combo[2]);
+          resultText.textContent = winner === "bean" ? "☕ Coffee wins!" : "🍬 Sugar wins!";
+          resultCard.classList.add("show");
+          return true;
+        }
+        if (board.every((c) => c !== null)) {
+          gameOver = true;
+          resultText.textContent = "It's a draw — fancy another round?";
+          resultCard.classList.add("show");
+          return true;
+        }
+        return false;
+      }
+
+      function placeOnBoard(kind, src, rotDeg, cellIdx) {
+        const img = document.createElement("img");
+        img.className = "placedPiece";
+        img.draggable = false;
+        img.alt = kind === "bean" ? "Coffee bean placed" : "Sugar cube placed";
+        img.src = src;
+        img.style.setProperty("--x", `${CELL_PCTS[cellIdx].x}%`);
+        img.style.setProperty("--y", `${CELL_PCTS[cellIdx].y}%`);
+        img.style.setProperty("--rot", `${rotDeg}deg`);
+        boardOverlay.appendChild(img);
+        placedEls.push(img);
+      }
+
+      function stagePosForCellTopLeft(cellIdx, pieceSize) {
+        const wrapLeft = coasterWrap.offsetLeft;
+        const wrapTop = coasterWrap.offsetTop;
+        const c = cellCenterPx(cellIdx);
+        return {
+          left: wrapLeft + c.x - pieceSize / 2,
+          top: wrapTop + c.y - pieceSize / 2,
+        };
+      }
+
+      function createPoolPieces() {
+        clearPoolPieces();
+        const { beans, cubes } = scatterLayout();
+        const wrapLeft = coasterWrap.offsetLeft;
+        const wrapTop = coasterWrap.offsetTop;
+        const wrapW = coasterWrap.getBoundingClientRect().width;
+        const pieceSize = 80;
+
+        function makePiece(kind, index, pos) {
+          const img = document.createElement("img");
+          img.className = "poolPiece";
+          img.draggable = false;
+          img.alt = kind === "bean" ? "Coffee bean piece" : "Sugar cube piece";
+          img.src = pieceSrc(kind, index);
+
+          img.dataset.kind = kind;
+          img.dataset.variant = String(index);
+          img.dataset.used = "0";
+          img.dataset.rot = String(pos.rot);
+
+          img.style.setProperty("--rot", `${pos.rot}deg`);
+          const top = wrapTop + pos.top;
+          let left = wrapLeft + (pos.left ?? 0);
+          if (pos.right != null) {
+            left = wrapLeft + (wrapW - pieceSize - pos.right);
+          }
+          img.style.top = `${top}px`;
+          img.style.left = `${left}px`;
+          img.dataset.baseTop = String(top);
+          img.dataset.baseLeft = String(left);
+
+          stage.appendChild(img);
+          poolEls.push(img);
+          img.addEventListener("mousedown", onPieceMouseDown);
+          return img;
+        }
+
+        for (let i = 0; i < 5; i++) makePiece("bean", i, beans[i]);
+        for (let i = 0; i < 5; i++) makePiece("cube", i, cubes[i]);
+      }
+
+      function canDragPiece(el) {
+        if (gameOver || computerThinking) return false;
+        if (el.dataset.used === "1") return false;
+        if (!gameStarted) return true; // first move chooses your side
+        return el.dataset.kind === player;
+      }
+
+      function onPieceMouseDown(e) {
+        const el = e.currentTarget;
+        if (!(el instanceof HTMLElement)) return;
+        if (!canDragPiece(el)) return;
+
+        e.preventDefault();
+
+        const rect = el.getBoundingClientRect();
+        const rot = Number(el.dataset.rot || "0");
+        const src = el.getAttribute("src");
+
+        el.classList.add("heldSource");
+
+        const ghost = document.createElement("img");
+        ghost.className = "dragGhost";
+        ghost.src = src;
+        ghost.alt = "Dragging piece";
+        ghost.style.setProperty("--rot", `${rot}deg`);
+        document.body.appendChild(ghost);
+
+        dragState = {
+          sourceEl: el,
+          ghostEl: ghost,
+          kind: el.dataset.kind,
+          rot,
+          src,
+          startClientX: e.clientX,
+          startClientY: e.clientY,
+          originCenterX: rect.left + rect.width / 2,
+          originCenterY: rect.top + rect.height / 2,
+          pieceSize: rect.width,
+        };
+
+        moveGhostTo(e.clientX, e.clientY);
+
+        window.addEventListener("mousemove", onMouseMove, { passive: false });
+        window.addEventListener("mouseup", onMouseUp, { passive: false, once: true });
+      }
+
+      function moveGhostTo(clientX, clientY) {
+        if (!dragState) return;
+        dragState.ghostEl.style.left = `${clientX}px`;
+        dragState.ghostEl.style.top = `${clientY}px`;
+      }
+
+      function onMouseMove(e) {
+        if (!dragState) return;
+        e.preventDefault();
+        moveGhostTo(e.clientX, e.clientY);
+      }
+
+      function cleanupDragListeners() {
+        window.removeEventListener("mousemove", onMouseMove);
+      }
+
+      function finishDragCleanup() {
+        if (!dragState) return;
+        dragState.sourceEl.classList.remove("heldSource");
+        dragState.ghostEl.remove();
+        dragState = null;
+        cleanupDragListeners();
+      }
+
+      function onMouseUp(e) {
+        if (!dragState) return;
+        e.preventDefault();
+
+        cleanupDragListeners();
+
+        const dropCell = findDropCellAt(e.clientX, e.clientY);
+        if (dropCell == null) {
+          animateGhostBackThenCleanup();
+          return;
+        }
+
+        const { sourceEl, ghostEl, kind, rot, src } = dragState;
+
+        if (!gameStarted) {
+          gameStarted = true;
+          player = kind;
+          computer = kind === "bean" ? "cube" : "bean";
+          if (note) note.style.visibility = "hidden";
+        }
+
+        board[dropCell] = kind;
+        lockCell(dropCell);
+        placeOnBoard(kind, src, rot, dropCell);
+
+        sourceEl.dataset.used = "1";
+        sourceEl.classList.add("used");
+        ghostEl.remove();
+        dragState = null;
+
+        if (endIfTerminal()) return;
+
+        computerThinking = true;
+        setTimeout(() => {
+          if (!gameOver) computerTurn();
+        }, 700);
+      }
+
+      function animateGhostBackThenCleanup() {
+        if (!dragState) return;
+        const { ghostEl, originCenterX, originCenterY } = dragState;
+        ghostEl.style.transition = "left 0.3s ease, top 0.3s ease";
+        requestAnimationFrame(() => {
+          ghostEl.style.left = `${originCenterX}px`;
+          ghostEl.style.top = `${originCenterY}px`;
+        });
+        const onEnd = () => {
+          ghostEl.removeEventListener("transitionend", onEnd);
+          finishDragCleanup();
+        };
+        ghostEl.addEventListener("transitionend", onEnd);
+      }
+
+      function nextComputerPoolPiece() {
+        return poolEls.find((el) => el.dataset.kind === computer && el.dataset.used !== "1") || null;
+      }
+
+      function computerTurn() {
+        const move = bestMove();
+        if (move < 0) {
+          computerThinking = false;
+          endIfTerminal();
+          return;
+        }
+
+        const poolPiece = nextComputerPoolPiece();
+        const rot = Number(poolPiece?.dataset.rot || "0");
+        const src = poolPiece?.getAttribute("src") || pieceSrc(computer, Date.now() % 2);
+
+        board[move] = computer;
+        lockCell(move);
+
+        const mover = document.createElement("img");
+        mover.className = "computerMover";
+        mover.src = src;
+        mover.alt = "Computer move";
+        mover.style.setProperty("--rot", `${rot}deg`);
+        stage.appendChild(mover);
+
+        let startLeft = 0;
+        let startTop = 0;
+        let pieceSize = mover.getBoundingClientRect().width || 80;
+
+        if (poolPiece) {
+          startLeft = Number(poolPiece.dataset.baseLeft || poolPiece.style.left.replace("px", "") || "0");
+          startTop = Number(poolPiece.dataset.baseTop || poolPiece.style.top.replace("px", "") || "0");
+          poolPiece.dataset.used = "1";
+          poolPiece.classList.add("used");
+        } else {
+          startLeft = coasterWrap.offsetLeft + 12;
+          startTop = coasterWrap.offsetTop - 40;
+        }
+
+        mover.style.left = `${startLeft}px`;
+        mover.style.top = `${startTop}px`;
+
+        const target = stagePosForCellTopLeft(move, pieceSize);
+
+        requestAnimationFrame(() => {
+          mover.style.transition =
+            "top 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), left 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)";
+          mover.style.left = `${target.left}px`;
+          mover.style.top = `${target.top}px`;
+        });
+
+        const onDone = () => {
+          mover.removeEventListener("transitionend", onDone);
+          mover.remove();
+          placeOnBoard(computer, src, rot, move);
+          computerThinking = false;
+          endIfTerminal();
+        };
+        mover.addEventListener("transitionend", onDone);
+      }
+
+      playAgainBtn.addEventListener("click", () => {
+        resetGameState();
+        if (note) note.style.visibility = "visible";
+        createPoolPieces();
+      });
+
+      function init() {
+        ensureDropzones();
+        updateDropzoneLocks();
+        resetGameState();
+        if (note) note.style.visibility = "visible";
+        createPoolPieces();
+      }
+
+      if (coasterImg.complete) init();
+      else coasterImg.addEventListener("load", init);
+    </script>
+  </body>
+</html>
