@@ -334,23 +334,80 @@
         return variantIndex % 2 === 0 ? "cube1.png" : "cube2.png";
       }
 
-      function scatterLayout() {
-        const beans = [
-          // Lower semi-circle cluster (below cup)
-          { top: 245, left: -78, rot: -12 },
-          { top: 285, right: -92, rot: 9 },
-          { top: 330, left: -28, rot: -6 },
-          { top: 365, right: -18, rot: 10 },
-          { top: 320, right: -52, rot: -9 },
+      /** Horseshoe below cup: arc centered on the cup, sweeping lower rim (surrounds bottom / lower sides). */
+      function computePoolScatter(wrapW, wrapH) {
+        const piece = 80;
+        const minDist = piece * 1.08;
+        const cx = wrapW / 2;
+        const cy = wrapH * 0.46;
+        const baseR = Math.min(wrapW, wrapH) * 0.48;
+        const ang0 = 38;
+        const ang1 = 142;
+        const jitter = [
+          { da: -4, dr: -6 },
+          { da: 5, dr: 4 },
+          { da: -3, dr: 7 },
+          { da: 4, dr: -5 },
+          { da: -6, dr: 3 },
+          { da: 3, dr: -8 },
+          { da: -5, dr: 6 },
+          { da: 6, dr: -4 },
+          { da: -2, dr: 5 },
+          { da: 4, dr: 2 },
         ];
-        const cubes = [
-          { top: 260, right: -56, rot: 14 },
-          { top: 300, left: -92, rot: -11 },
-          { top: 350, right: -110, rot: 6 },
-          { top: 385, left: 22, rot: -8 },
-          { top: 340, left: -6, rot: 9 },
+        const kinds = [
+          "bean",
+          "cube",
+          "cube",
+          "bean",
+          "bean",
+          "cube",
+          "cube",
+          "bean",
+          "bean",
+          "cube",
         ];
-        return { beans, cubes };
+        let r = baseR;
+        let centers;
+        for (let attempt = 0; attempt < 12; attempt++) {
+          centers = [];
+          for (let i = 0; i < 10; i++) {
+            const t = i / 9;
+            const angDeg = ang0 + t * (ang1 - ang0) + jitter[i].da;
+            const ang = (angDeg * Math.PI) / 180;
+            const rr = r + jitter[i].dr;
+            centers.push({
+              x: cx + Math.cos(ang) * rr,
+              y: cy + Math.sin(ang) * rr,
+            });
+          }
+          let ok = true;
+          for (let a = 0; a < centers.length && ok; a++) {
+            for (let b = a + 1; b < centers.length; b++) {
+              const dx = centers[a].x - centers[b].x;
+              const dy = centers[a].y - centers[b].y;
+              if (Math.hypot(dx, dy) < minDist) {
+                ok = false;
+                break;
+              }
+            }
+          }
+          if (ok) break;
+          r += 6;
+        }
+        const rots = [-11, 8, -6, 13, -9, 7, -14, 5, -4, 10];
+        let beanIdx = 0;
+        let cubeIdx = 0;
+        return kinds.map((kind, i) => {
+          const variantIndex = kind === "bean" ? beanIdx++ : cubeIdx++;
+          return {
+            kind,
+            variantIndex,
+            left: centers[i].x - piece / 2,
+            top: centers[i].y - piece / 2,
+            rot: rots[i],
+          };
+        });
       }
 
       function ensureDropzones() {
@@ -516,30 +573,28 @@
 
       function createPoolPieces() {
         clearPoolPieces();
-        const { beans, cubes } = scatterLayout();
         const wrapLeft = coasterWrap.offsetLeft;
         const wrapTop = coasterWrap.offsetTop;
-        const wrapW = coasterWrap.getBoundingClientRect().width;
-        const pieceSize = 80;
+        const wrapRect = coasterWrap.getBoundingClientRect();
+        const wrapW = wrapRect.width;
+        const wrapH = wrapRect.height;
+        const layout = computePoolScatter(wrapW, wrapH);
 
-        function makePiece(kind, index, pos) {
+        function makePiece(entry) {
           const img = document.createElement("img");
           img.className = "poolPiece";
           img.draggable = false;
-          img.alt = kind === "bean" ? "Coffee bean piece" : "Sugar cube piece";
-          img.src = pieceSrc(kind, index);
+          img.alt = entry.kind === "bean" ? "Coffee bean piece" : "Sugar cube piece";
+          img.src = pieceSrc(entry.kind, entry.variantIndex);
 
-          img.dataset.kind = kind;
-          img.dataset.variant = String(index);
+          img.dataset.kind = entry.kind;
+          img.dataset.variant = String(entry.variantIndex);
           img.dataset.used = "0";
-          img.dataset.rot = String(pos.rot);
+          img.dataset.rot = String(entry.rot);
 
-          img.style.setProperty("--rot", `${pos.rot}deg`);
-          const top = wrapTop + pos.top;
-          let left = wrapLeft + (pos.left ?? 0);
-          if (pos.right != null) {
-            left = wrapLeft + (wrapW - pieceSize - pos.right);
-          }
+          img.style.setProperty("--rot", `${entry.rot}deg`);
+          const top = wrapTop + entry.top;
+          const left = wrapLeft + entry.left;
           img.style.top = `${top}px`;
           img.style.left = `${left}px`;
           img.dataset.baseTop = String(top);
@@ -551,8 +606,7 @@
           return img;
         }
 
-        for (let i = 0; i < 5; i++) makePiece("bean", i, beans[i]);
-        for (let i = 0; i < 5; i++) makePiece("cube", i, cubes[i]);
+        layout.forEach((entry) => makePiece(entry));
       }
 
       function canDragPiece(el) {
